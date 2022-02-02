@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """ This script analyses ???
 """
-import sys
 import argparse
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
