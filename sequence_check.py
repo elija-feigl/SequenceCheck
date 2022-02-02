@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """ This script analyses ???
 """
-
+import sys
 import argparse
 import logging
 from dataclasses import dataclass, field
@@ -15,18 +15,18 @@ __author__ = "Elija Feigl, Anna Liedl"
 __copyright__ = "Copyright 2021, Dietzlab (TUM)"
 __credits__ = ["TU München"]
 __license__ = "None"
-__version__ = "0.1"
+__version__ = "0.2"
 
 REVERSE = {
-    "A": "T",
-    "T": "A",
-    "G": "C",
-    "C": "G",
+    "a": "t",
+    "t": "a",
+    "g": "c",
+    "c": "g",
 }
 
 
 @dataclass
-class Project:
+class Design:
     """Class containing design file and scaffold"""
 
     design_file: Path
@@ -38,6 +38,7 @@ class Project:
         self.logger = logging.getLogger(__name__)
         logging.getLogger("nanodesign").setLevel(logging.ERROR)
         self.design = self._read_design()
+        self.logger.debug("initialising design sucessfull! YEAH")
 
     def _read_design(self) -> DnaStructure:
         """read cadnano json file using scaffold sequence file
@@ -45,7 +46,7 @@ class Project:
         """
         converter = Converter()
         converter.modify = True
-        if self.design_file.exists():
+        if self.design_file.exists() and self.sequence_file.exists():
             converter.read_cadnano_file(
                 file_name=str(self.design_file),
                 seq_file_name=str(self.sequence_file),
@@ -62,15 +63,22 @@ class Project:
         return converter.dna_structure
 
     def get_scaffold(self) -> str:
-        scaffold = [s.tour for s in self.design.strands if s.is_scaffold][0]
+        scaffolds = [s for s in self.design.strands if s.is_scaffold]
+        if len(scaffolds) > 1:
+            self.logger.error("too many scaffolds.")
+            sys.exit(0)
+        else:
+            scaffold = scaffolds[0]
         sequence = "".join([base.seq for base in scaffold.tour])
-        return sequence
+        return sequence.lower()
 
     def get_staples(self) -> List[str]:
-        staples = [s.tour for s in self.design.strands if not s.is_scaffold]
-        sequences = []
+        staples = [s for s in self.design.strands if not s.is_scaffold]
+        sequences = list()
         for strand in staples:
-            sequences.append("".join([base.seq for base in strand.tour]))
+            sequence = "".join([base.seq for base in strand.tour])
+            sequence = sequence.replace("N", "T")
+            sequences.append(sequence.lower())
         return sequences
 
 
@@ -87,9 +95,8 @@ def score_check(scaffold: str, staples: List[str]) -> Dict[str, int]:
 
 
 def print_results(logger: logging.Logger, score: Dict[str, int]) -> None:
-    logger.info("Score 7mer Scaffold-Staple %s", score["7_scaffold"])
-    logger.info("Score 7mer Staple-Scaffold %s", score["7_staple"])
-    logger.info("Score 7mer Scaffold-Staple and Staple-Scaffold %s", score["7_both"])
+    for key, value in score.items():
+        logger.info("Score %s: %s", key, value)
 
 
 def get_description() -> str:
@@ -100,12 +107,12 @@ def get_description() -> str:
 def proc_input() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=get_description(),
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "-d",
         "--design",
         help="cadnano design file",
+        required=True,
         type=str,
         default=argparse.SUPPRESS,
     )
@@ -121,15 +128,21 @@ def proc_input() -> argparse.Namespace:
 
 
 def main():
-    # command line argmunet parsing
     logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s | [%(name)s] %(levelname)s - %(message)s"
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     args = proc_input()
     logger.debug("Parsed command line input %s", args)
 
     # TODO-EF: permutate sequence space. check score for each permutation
 
-    # structure generation
-    project = Project(design_file=args.design, sequence_file=args.sequence)
+    project = Design(design_file=Path(args.design), sequence_file=Path(args.sequence))
     scaffold = project.get_scaffold()
     staples = project.get_staples()
 
